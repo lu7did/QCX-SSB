@@ -9,3 +9,5 @@ with a Pixie Transceiver.
 
 It's a work in progress repository and largely not functional at this point.
 
+At this point only the GUI has been (partially) ported, no DSP functions has
+been implemented.

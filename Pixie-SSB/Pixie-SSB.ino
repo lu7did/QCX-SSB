@@ -287,7 +287,9 @@ public:  // LCD1602 display in 4-bit mode, RS is pull-up and kept low when idle 
   #define _dn  0      // PD0 to PD3 connect to D4 to D7 on the display
   #define _en  4      // PD4 - MUST have pull-up resistor
   #define _rs  4      // PC4 - MUST have pull-up resistor
+
 #define RS_PULLUP  1   // Use pullup on RS line, ensures compliancy to the absolute maximum ratings for the si5351 sda input that is shared with rs pin of lcd
+
 #ifdef RS_PULLUP
   #define LCD_RS_HI() DDRC &= ~(1 << _rs); asm("nop"); // RS high (pull-up)
   #define LCD_RS_LO() DDRC |= 1 << _rs;                // RS low (pull-down)
@@ -295,6 +297,7 @@ public:  // LCD1602 display in 4-bit mode, RS is pull-up and kept low when idle 
   #define LCD_RS_LO() PORTC &= ~(1 << _rs);        // RS low
   #define LCD_RS_HI() PORTC |= (1 << _rs);         // RS high
 #endif //RS_PULLUP
+
   #define LCD_EN_LO() PORTD &= ~(1 << _en);        // EN low
   #define LCD_EN_HI() PORTD |= (1 << _en);         // EN high
   #define LCD_PREP_NIBBLE(b) (PORTD & ~(0xf << _dn)) | (b) << _dn | 1 << _en // Send data and enable high
@@ -552,7 +555,9 @@ public:
   #endif
   }
   inline void suspend(){
+    
     I2C_SDA_LO();         // pin sharing SDA/LCD_RS: pull-down LCD_RS; QCXLiquidCrystal require this for any operation
+    
   }
 
   void begin(){};
@@ -2978,6 +2983,8 @@ void initPins(){
 #ifdef PIXIE  
   pinMode(LCD_BL,OUTPUT);
   digitalWrite(LCD_BL,HIGH); 
+  
+
 #else  
   digitalWrite(SIG_OUT, LOW);
   digitalWrite(SIDETONE, LOW);

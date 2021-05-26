@@ -910,7 +910,11 @@ void dsp_tx()
   si5351.SendRegister(18, (quad) ? 0x1f : 0x0f);  // Invert/non-invert CLK2 in case of a huge phase-change
 #endif
 #endif //QUAD
+
+#ifndef PIXIE //*REVIEW* no PWM out
   OCR1BL = amp;                      // submit amplitude to PWM register (takes about 1/32125 = 31us+/-31us to propagate) -> amplitude-phase-alignment error is about 30-50us
+#endif //PIXIE
+  
   adc += ADC;
 ADCSRA |= (1 << ADSC);  // causes RFI on QCX-SSB units (not on units with direct biasing); ENABLE this line when using direct biasing!!
   int16_t df = ssb(_adc >> MIC_ATTEN); // convert analog input into phase-shifts (carrier out by periodic frequency shifts)
@@ -926,14 +930,26 @@ ADCSRA |= (1 << ADSC);  // causes RFI on QCX-SSB units (not on units with direct
   ADCSRA |= (1 << ADSC);    // start next ADC conversion (trigger ADC interrupt if ADIE flag is set)
   //OCR1BL = amp;                        // submit amplitude to PWM register (actually this is done in advance (about 140us) of phase-change, so that phase-delays in key-shaping circuit filter can settle)
   si5351.SendPLLRegisterBulk();       // submit frequency registers to SI5351 over 731kbit/s I2C (transfer takes 64/731 = 88us, then PLL-loopfilter probably needs 50us to stabalize)
+  
+#ifndef PIXIE //*REVIEW* this is to disable PWM   
   OCR1BL = amp;                        // submit amplitude to PWM register (takes about 1/32125 = 31us+/-31us to propagate) -> amplitude-phase-alignment error is about 30-50us
+#endif
+  
   int16_t adc = ADC - 512; // current ADC sample 10-bits analog input, NOTE: first ADCL, then ADCH
   int16_t df = ssb(adc >> MIC_ATTEN);  // convert analog input into phase-shifts (carrier out by periodic frequency shifts)
   si5351.freq_calc_fast(df);           // calculate SI5351 registers based on frequency shift and carrier frequency
 #endif
 
 #ifdef CARRIER_COMPLETELY_OFF_ON_LOW
-  if(tx == 1){ OCR1BL = 0; si5351.SendRegister(SI_CLK_OE, 0b11111111); }   // disable carrier
+
+  if(tx == 1){
+    
+#ifndef PIXIE  
+    OCR1BL = 0;
+#endif
+    
+    si5351.SendRegister(SI_CLK_OE, 0b11111111); 
+  }   // disable carrier
 #ifdef TX_CLK0_CLK1
   if(tx == 255){ si5351.SendRegister(SI_CLK_OE, 0b11111100); } // enable carrier
 #else //TX_CLK2
@@ -970,6 +986,8 @@ void dummy()
 
 void dsp_tx_cw()
 { // jitter dependent things first
+  
+#ifndef PIXIE
 #ifdef KEY_CLICK
   if(OCR1BL < lut[255]) { //check if already ramped up: ramp up of amplitude 
      for(uint16_t i = 31; i != 0; i--) {   // soft rising slope against key-clicks
@@ -978,16 +996,24 @@ void dsp_tx_cw()
      }
   }
 #endif // KEY_CLICK
+#endif //PIXIE
+
+#ifdef PIXIE //*REVIEW* eliminate PWM
   OCR1BL = lut[255];
-  
+ 
   process_minsky();
   OCR1AL = (p_sin >> (16 - volume)) + 128;
+#endif //PIXIE  
 }
 
 void dsp_tx_am()
 { // jitter dependent things first
   ADCSRA |= (1 << ADSC);    // start next ADC conversion (trigger ADC interrupt if ADIE flag is set)
+
+#ifndef PIXIE //*REVIEW* No PWM  
   OCR1BL = amp;                        // submit amplitude to PWM register (actually this is done in advance (about 140us) of phase-change, so that phase-delays in key-shaping circuit filter can settle)
+#endif //PIXIE
+  
   int16_t adc = ADC - 512; // current ADC sample 10-bits analog input, NOTE: first ADCL, then ADCH
   int16_t in = (adc >> MIC_ATTEN);
   in = in << (drive-4);
@@ -1002,7 +1028,11 @@ void dsp_tx_am()
 void dsp_tx_fm()
 { // jitter dependent things first
   ADCSRA |= (1 << ADSC);    // start next ADC conversion (trigger ADC interrupt if ADIE flag is set)
+
+#ifndef PIXIE //*REVIEW* No PWM  
   OCR1BL = lut[255];                   // submit amplitude to PWM register (actually this is done in advance (about 140us) of phase-change, so that phase-delays in key-shaping circuit filter can settle)
+#endif
+
   si5351.SendPLLRegisterBulk();       // submit frequency registers to SI5351 over 731kbit/s I2C (transfer takes 64/731 = 88us, then PLL-loopfilter probably needs 50us to stabalize)
   int16_t adc = ADC - 512; // current ADC sample 10-bits analog input, NOTE: first ADCL, then ADCH
   int16_t in = (adc >> MIC_ATTEN);
@@ -1814,12 +1844,16 @@ inline int16_t sdr_rx_common_i()
   ADMUX = admux[1]; ADCSRA |= (1 << ADSC); int16_t adc = ADC - 511; 
   static int16_t prev_adc;
   int16_t ac = (prev_adc + adc) / 2; prev_adc = adc;
+
+#ifndef PIXIE //*REVIEW* No PWM  
 #ifdef AF_OUT
   if(_init){ ocomb=0; ozi1 = 0; ozi2 = 0; } // hack
   ozi2 = ozi1 + ozi2;          // Integrator section
   ozi1 = ocomb + ozi1;
   OCR1AL = min(max((ozi2>>5) + 128, 0), 255);
 #endif // AF_OUT
+#endif
+
   return ac;
 }
 
@@ -1943,12 +1977,16 @@ inline void sdr_rx_common()
   ozi2 = ozi1 + ozi2;          // Integrator section
 #endif
   ozi1 = ocomb + ozi1;
+
+#ifndef PIXIE //*REVIEW* no PWM  
 #ifdef SECOND_ORDER_DUC
   OCR1AL = min(max((ozi2>>5) + 128, 0), 255);  // OCR1AL = min(max((ozi2>>5) + ICR1L/2, 0), ICR1L);  // center and clip wrt PWM working range
 #else
   OCR1AL = (ozi1>>5) + 128;
   OCR1AL = min(max((ozi1>>5) + 128, 0), 255);  // OCR1AL = min(max((ozi2>>5) + ICR1L/2, 0), ICR1L);  // center and clip wrt PWM working range
 #endif
+#endif //PIXIE
+
 }
 #endif //OLD_RX
 
@@ -1988,12 +2026,15 @@ void sdr_rx()
     ozi2 = ozi1 + ozi2;          // Integrator section
     #endif
     ozi1 = ocomb + ozi1;
+#ifndef PIXIE    //*REVIEW* No PWM
     #ifdef SECOND_ORDER_DUC
     OCR1AL = min(max((ozi2>>5) + 128, 0), 255);  // OCR1AL = min(max((ozi2>>5) + ICR1L/2, 0), ICR1L);  // center and clip wrt PWM working range
     #else
     OCR1AL = (ozi1>>5) + 128;
     //OCR1AL = min(max((ozi1>>5) + 128, 0), 255);  // OCR1AL = min(max((ozi2>>5) + ICR1L/2, 0), ICR1L);  // center and clip wrt PWM working range
     #endif
+#endif //PIXIE    
+
     // Only for I: correct I/Q sample delay by means of linear interpolation
     static int16_t prev_adc;
     int16_t corr_adc = (prev_adc + ac) / 2;
@@ -2109,8 +2150,12 @@ void timer1_start(uint32_t fs)
 
 void timer1_stop()
 {
+  
+#ifndef PIXIE
   OCR1AL = 0x00;
   OCR1BL = 0x00;
+#endif //PIXIE
+  
 }
 
 void timer2_start(uint32_t fs)
@@ -2438,14 +2483,27 @@ void switch_rxtx(uint8_t tx_enable){
 #else
       si5351.SendRegister(SI_CLK_OE, 0b11111011); // CLK2_EN=1, CLK1_EN,CLK0_EN=0
 #endif  //TX_CLK0_CLK1
+
+#ifndef PIXIE
+/*
+ * SIDETONE line is assigned to the LCD backlight therefore this creates an oscillation in the brightness
+ */
       OCR1AL = 0x80; // make sure SIDETONE is set at 2.5V
+#endif
+
       if((!mox) && (mode != CW)) TCCR1A &= ~(1 << COM1A1); // disable SIDETONE, prevent interference during SSB TX
+
+#ifndef PIXIE //*REVIEW* No PWM      
       TCCR1A |= (1 << COM1B1);  // enable KEY_OUT PWM
+#endif      
+
 #ifdef _SERIAL
       if(cat_active){ DDRC &= ~(1<<2); } // disable PC2, so that ADC2 can be used as mic input
 #endif
     }
   } else {  // rx
+    
+#ifndef PIXIE  
 #ifdef KEY_CLICK
       if(OCR1BL != 0) {
        for(uint16_t i = 0; i != 31; i++) {   // ramp down of amplitude: soft falling edge to prevent key clicks
@@ -2454,9 +2512,16 @@ void switch_rxtx(uint8_t tx_enable){
        }
       }
 #endif //KEY_CLICK
+#endif //PIXIE
+
+#ifndef PIXIE   //*REVIEW* this is to eliminate traces of PWM over D10 which is used to brightness
+
       TCCR1A |= (1 << COM1A1);  // enable SIDETONE (was disabled to prevent interference during ssb tx)
       TCCR1A &= ~(1 << COM1B1); digitalWrite(KEY_OUT, LOW); // disable KEY_OUT PWM, prevents interference during RX
       OCR1BL = 0; // make sure PWM (KEY_OUT) is set to 0%
+
+#endif //PIXIE
+
 #ifdef QUAD
 #ifdef TX_CLK0_CLK1
       si5351.SendRegister(16, 0x0f);  // disable invert on CLK0
@@ -2590,6 +2655,12 @@ void powerDown()
   do { wdt_enable(WDTO_15MS); for(;;); } while(0);  // soft reset by trigger watchdog timeout
 }
 
+#ifdef EA2EHC
+void show_banner(){
+  lcd.setCursor(0, 0);
+  lcd_blanks(); lcd_blanks();
+}
+#else 
 void show_banner(){
   lcd.setCursor(0, 0);
   const char* cap_label[] = { "SSB", "DSP", "SDR" };
@@ -2607,7 +2678,7 @@ void show_banner(){
 
 #endif //PIXIE  
 #endif
-  
+#endif //EA2EHC
 }
 
 const char* vfosel_label[] = { "A", "B"/*, "Split"*/ };
@@ -3398,19 +3469,22 @@ void setup()
   }
 #endif
 
+
   show_banner();
-  
+
 #ifdef PIXIE
-  lcd.setCursor(0, 0);
-  lcd.print(F("Pixie"));
-  //if(ssb_cap || dsp_cap){ lcd.print(F("-")); lcd.print(cap_label[dsp_cap]); } 
-#else
+  lcd.setCursor(0, 1); lcd.print(F("Version R")); lcd.print(F(VERSION)); lcd_blanks();
+#endif
+
+#ifdef EA2EHC  
   lcd.setCursor(5, 0); lcd.print("EA2EHC"); lcd_blanks();
   lcd.setCursor(5, 1); lcd.print(F(VERSION)); lcd_blanks();
+#endif  
+
   delay(3000);
   drive = 4;  // Init settings
   cw_offset = tones[cw_tone];
-#endif  
+
 
 #ifndef PIXIE
   //freq = bands[band];

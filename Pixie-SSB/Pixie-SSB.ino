@@ -40,24 +40,24 @@
  * Configuration options disabled on the Pixie implementation
  */
 
-//#define KEYER               1     // CW keyer
-//#define CW_DECODER          1     // Decodificador CW
-//#define FILTER_700HZ        1     // Activa la opcion de 600Hz / 700Hz
+//#define KEYER               1   // CW keyer
+//#define CW_DECODER          1   // Decodificador CW
+//#define FILTER_700HZ        1   // Activa la opcion de 600Hz / 700Hz
 //#define CAT                 1   // Interface CAT emulacion Kenwood TS-480
 //#define CAT_EXT             1   // Extended CAT support: remote button and screen control commands over CAT
 //#define CAT_STREAMING       1   // Extended CAT support: audio streaming over CAT, once enabled and triggered with CAT cmd, 7.812ksps 8-bit unsigned audio is sent over UART. The ";" is omited in the data-stream, and only sent to indicate the beginning and end of a CAT cmd.
 //#define SWAP_ROTARY         1   // Cambia la direccion del encoder
-//#define KEY_CLICK        1   // Reduce key clicks by envelope shaping
-//#define SEMI_QSK         1   // Just after keying the transmitter, keeps the RX muted for a short amount of time in the anticipation for continued keying
-//#define RIT_ENABLE       1   // Receive-In-Transit alternates the receiving frequency with an user-defined offset to compensate for any necessary tuning needed on receive
-//#define MOX_ENABLE       1   // Monitor-On-Xmit which is audio monitoring on speaker during transmit
-//#define FAST_AGC         1   // Adds fast AGC option (good for CW)
-//#define TX_DELAY         1   // Enables a delay in the actual transmission to allow relay-switching to be completed before the power is applied (see also NTX, PTX definitions below for GPIO that can switch relay/PA)
-//#define TUNING_DIAL      1
-//#define CW_MESSAGE       1   // Mensaje CQ CW click izuierdo en el menu 4.2
-//#define CW_MESSAGE_EXT   1   // Mensajes adicionales CW
-//#define CW_FREQS_QRP     1   // Frecuencia por defecto CW QRP cuando cambiamos de banda
-//#define CW_FREQS_FISTS   1   // Frecuencia por defecto CW FISTS cuando cambiamos de banda
+//#define KEY_CLICK           1   // Reduce key clicks by envelope shaping
+//#define SEMI_QSK            1   // Just after keying the transmitter, keeps the RX muted for a short amount of time in the anticipation for continued keying
+//#define RIT_ENABLE          1   // Receive-In-Transit alternates the receiving frequency with an user-defined offset to compensate for any necessary tuning needed on receive
+//#define MOX_ENABLE          1   // Monitor-On-Xmit which is audio monitoring on speaker during transmit
+//#define FAST_AGC            1   // Adds fast AGC option (good for CW)
+//#define TX_DELAY            1   // Enables a delay in the actual transmission to allow relay-switching to be completed before the power is applied (see also NTX, PTX definitions below for GPIO that can switch relay/PA)
+//#define TUNING_DIAL         1
+//#define CW_MESSAGE          1   // Mensaje CQ CW click izuierdo en el menu 4.2
+//#define CW_MESSAGE_EXT      1   // Mensajes adicionales CW
+//#define CW_FREQS_QRP        1   // Frecuencia por defecto CW QRP cuando cambiamos de banda
+//#define CW_FREQS_FISTS      1   // Frecuencia por defecto CW FISTS cuando cambiamos de banda
 //#define VSS_METER           1   // Supports Vss measurement (as s-meter option)
 //#define SWR_METER           1   // Supports SWR meter with bridge on A6/A7 (LQPF ATMEGA328P) by Alain, K1FM, see: https://groups.io/g/ucx/message/6262 and https://groups.io/g/ucx/message/6361
 //#define CLOCK               1   // Enables clock
@@ -2090,6 +2090,8 @@ void adc_stop()
 
 void timer1_start(uint32_t fs)
 {  // Timer 1: OC1A and OC1B in PWM mode
+  
+#ifndef PIXIE  // *REVIEW* this is to avoid the interference with the display
   TCCR1A = 0;
   TCCR1B = 0;
   TCCR1A |= (1 << COM1A1) | (1 << COM1B1) | (1 << WGM11); // Clear OC1A/OC1B on compare match, set OC1A/OC1B at BOTTOM (non-inverting mode)
@@ -2102,6 +2104,7 @@ void timer1_start(uint32_t fs)
   OCR1AL = 0x00;  // OC1A (SIDETONE) PWM duty-cycle (span defined by ICR).
   OCR1BH = 0x00;
   OCR1BL = 0x00;  // OC1B (KEY_OUT) PWM duty-cycle (span defined by ICR).
+#endif //PIXIE  
 }
 
 void timer1_stop()
@@ -2271,7 +2274,11 @@ float smeter(float ref = 0)
     else               rms = (float)max_absavg256 * 5.0 * (float)(1 << att2) / (256.0 * 1024.0 * (float)R * 2.0 * 100.0 * 120.0 / 1.750);
     dbm = (10.0 * log10((rms * rms) / 50.0) + 30.0) - ref; //from rmsV to dBm at 50R
 
-    lcd.noCursor(); 
+    lcd.noCursor();
+#ifndef PIXIE
+/*     
+ *      In the PIXIE implementation no RX signal is feedback into the processor, therefore no signal meter can be used
+ */      
     if(smode == 1){ // dBm meter
       lcd.setCursor(9, 0); lcd.print((int16_t)dbm); lcd.print(F("dBm "));
     }
@@ -2285,6 +2292,7 @@ float smeter(float ref = 0)
       for(uint8_t i = 0; i != 4; i++){ tmp[i] = max(2, min(5, s + 1)); s = s - 3; } tmp[4] = 0;
       lcd.setCursor(12, 0); lcd.print(tmp);
     }
+#endif    
 #ifdef CW_DECODER
     if(smode == 4){ // wpm-indicator
       lcd.setCursor(14, 0); if(mode == CW) lcd.print(wpm); lcd.print("  ");
@@ -2584,7 +2592,22 @@ void powerDown()
 
 void show_banner(){
   lcd.setCursor(0, 0);
-  lcd_blanks(); lcd_blanks();
+  const char* cap_label[] = { "SSB", "DSP", "SDR" };
+
+#ifdef QCX
+  lcd.print(F("QCX"));
+  if(ssb_cap || dsp_cap){ lcd.print(F("-")); lcd.print(cap_label[dsp_cap]); }
+#else
+
+#ifndef PIXIE
+  lcd.print(F("uSDX"));
+#else
+  lcd.print(F("Pixie"));
+  lcd.print(F("-")); lcd.print(cap_label[0]);
+
+#endif //PIXIE  
+#endif
+  
 }
 
 const char* vfosel_label[] = { "A", "B"/*, "Split"*/ };
@@ -2881,7 +2904,10 @@ void initPins(){
   pinMode(BUTTONS, INPUT);  // L/R/rotary button
   pinMode(DIT, INPUT_PULLUP);
   
-#ifndef PIXIE  
+#ifdef PIXIE  
+  pinMode(LCD_BL,OUTPUT);
+  digitalWrite(LCD_BL,HIGH); 
+#else  
   digitalWrite(SIG_OUT, LOW);
   digitalWrite(SIDETONE, LOW);
   pinMode(SIDETONE, OUTPUT);
@@ -3373,13 +3399,21 @@ void setup()
 #endif
 
   show_banner();
+  
+#ifdef PIXIE
+  lcd.setCursor(0, 0);
+  lcd.print(F("Pixie"));
+  //if(ssb_cap || dsp_cap){ lcd.print(F("-")); lcd.print(cap_label[dsp_cap]); } 
+#else
   lcd.setCursor(5, 0); lcd.print("EA2EHC"); lcd_blanks();
   lcd.setCursor(5, 1); lcd.print(F(VERSION)); lcd_blanks();
   delay(3000);
   drive = 4;  // Init settings
   cw_offset = tones[cw_tone];
+#endif  
+
+#ifndef PIXIE
   //freq = bands[band];
-  
   // Load parameters from EEPROM, reset to factory defaults when stored values are from a different version
   paramAction(LOAD, VERS);
   if((eeprom_version != get_version_id()) || _digitalRead(BUTTONS) ){  // EEPROM clean: if rotary-key pressed or version signature in EEPROM does NOT corresponds with this firmware
@@ -3392,6 +3426,8 @@ void setup()
   } else {
     paramAction(LOAD);  // load all parameters
   }
+#endif //PIXIE
+  
   si5351.iqmsa = 0;  // enforce PLL reset
   change = true;
   prev_bandval = bandval;

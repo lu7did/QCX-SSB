@@ -97,23 +97,23 @@
 
 #ifdef PIXIE
 // Definicion de los pines del Arduino
-//----------------->>Original Assignment
-#define LCD_D4  4  //0         //PD0    (pin 2)
-#define LCD_D5  5  //1         //PD1    (pin 3)
-#define LCD_D6  6  //2         //PD2    (pin 4)
-#define LCD_D7  7  //3         //PD3    (pin 5)
-#define LCD_EN  9  //4         //PD4    (pin 6)
-#define LCD_BL 10  //8
-#define ROT_A   2  //6         //PD6    (pin 12)
-#define ROT_B   3  //7         //PD7    (pin 13)
-#define RX      11 //8         //PB0    (pin 14)
-#define KEY_OUT 12 //10        //PB2    (pin 16)
-#define DIT     13        //PB5    (pin 19)
-#define DVM     16        //PC2/A2 (pin 25)
-#define BUTTONS 14 //17        //PC3/A3 (pin 26)
-#define LCD_RS  8  //18        //PC4    (pin 27)
-#define SDA     18        //PC4    (pin 27)
-#define SCL     19        //PC5    (pin 28)
+//----------------->>Original Assignment         Arduino
+#define LCD_D4  4  //0         //PD0    (pin 2)  D4
+#define LCD_D5  5  //1         //PD1    (pin 3)  D5
+#define LCD_D6  6  //2         //PD2    (pin 4)  D6
+#define LCD_D7  7  //3         //PD3    (pin 5)  D7
+#define LCD_EN  9  //4         //PD4    (pin 6)  D9
+#define LCD_BL 10  //8 **Backlight**             D10
+#define ROT_A   2  //6         //PD6    (pin 12) D2
+#define ROT_B   3  //7         //PD7    (pin 13) D3
+#define RX      11 //8         //PB0    (pin 14) D11
+#define KEY_OUT 12 //10        //PB2    (pin 16) D12
+#define DIT     13             //PB5    (pin 19) D13
+#define DVM     16             //PC2/A2 (pin 25) A2
+#define BUTTONS 14 //17        //PC3/A3 (pin 26) A0
+#define LCD_RS  8  //18        //PC4    (pin 27) D8
+#define SDA     18             //PC4    (pin 27) SDA
+#define SCL     19             //PC5    (pin 28) SCL
 
 /*
  * Not implemented
@@ -239,6 +239,7 @@ int debounce;
 enum KSTYPE {IDLE, CHK_DIT, CHK_DAH, KEYED_PREP, KEYED, INTER_ELEMENT }; // State machine states
 
 #ifndef PIXIE
+
 /*
  * Only enabled when the KEYER directive is enabled but it is disabled on Pixies
  * however, DAH isn't defined on Pixie either therefore a compilation error happens
@@ -282,30 +283,44 @@ uint8_t backlight = LCD_BL;
 
 uint8_t backlight = 8;
 
+#endif //PIXIE BLACKOUT (including LCD class with it)
+
+#ifndef PIXIE
+
 class LCD : public Print {  // inspired by: http://www.technoblogy.com/show?2BET
 public:  // LCD1602 display in 4-bit mode, RS is pull-up and kept low when idle to prevent potential display RFI via RS line
+
   #define _dn  0      // PD0 to PD3 connect to D4 to D7 on the display
   #define _en  4      // PD4 - MUST have pull-up resistor
   #define _rs  4      // PC4 - MUST have pull-up resistor
 
+  
 #define RS_PULLUP  1   // Use pullup on RS line, ensures compliancy to the absolute maximum ratings for the si5351 sda input that is shared with rs pin of lcd
 
 #ifdef RS_PULLUP
-  #define LCD_RS_HI() DDRC &= ~(1 << _rs); asm("nop"); // RS high (pull-up)
+
+  #define LCD_RS_HI() DDRC &= ~(1 << _rs); asm("nop"); // RS high (pull-up) 
   #define LCD_RS_LO() DDRC |= 1 << _rs;                // RS low (pull-down)
-#else
+
+#else //RS_PULLUP
+
   #define LCD_RS_LO() PORTC &= ~(1 << _rs);        // RS low
   #define LCD_RS_HI() PORTC |= (1 << _rs);         // RS high
+
 #endif //RS_PULLUP
+
 
   #define LCD_EN_LO() PORTD &= ~(1 << _en);        // EN low
   #define LCD_EN_HI() PORTD |= (1 << _en);         // EN high
   #define LCD_PREP_NIBBLE(b) (PORTD & ~(0xf << _dn)) | (b) << _dn | 1 << _en // Send data and enable high
+
   void begin(uint8_t x = 0, uint8_t y = 0){        // Send command , make sure at least 40ms after power-up before sending commands
     bool reinit = (x == 0) && (y == 0);
+
     DDRD |= 0xf << _dn | 1 << _en;                 // Make data, EN outputs
     DDRC |= 1 << _rs;
     //PORTC &= ~(1 << _rs);                          // Set RS low in case to support pull-down when DDRC is output
+
     delayMicroseconds(50000);                      // *
     LCD_RS_LO(); LCD_EN_LO();
     cmd(0x33);                                     // Ensures display is in 8-bit mode
@@ -352,12 +367,15 @@ public:  // LCD1602 display in 4-bit mode, RS is pull-up and kept low when idle 
     pre();
     //LCD_EN_HI();                                   // Complete Enable cycle must be at least 500ns (so start early)
     uint8_t nibh = LCD_PREP_NIBBLE(b >>  4);       // Prepare high nibble data and enable high
+
     PORTD = nibh;                                  // Send high nibble data and enable high
     uint8_t nibl = LCD_PREP_NIBBLE(b & 0xf);       // Prepare low nibble data and enable high
+    
     //asm("nop");                                    // Enable high pulse width must be at least 230ns high, data-setup time 80ns; ATMEGA clock-cycle is 50ns (so at least 5 cycles)
     LCD_RS_HI();
     LCD_EN_LO();
     PORTD = nibl;                                  // Send low nibble data and enable high
+
     LCD_RS_LO();
     //asm("nop"); asm("nop");                        // Complete Enable cycle must be at least 500ns
     //PORTD = nibl;                                  // Send low nibble data and enable high
@@ -382,11 +400,40 @@ public:  // LCD1602 display in 4-bit mode, RS is pull-up and kept low when idle 
 
 /*
  * Standard Arduino Uno LCD + Encoder Shield
- */
+*/
 #include <LiquidCrystal.h>
 LiquidCrystal lcd(LCD_RS, LCD_EN, LCD_D4, LCD_D5, LCD_D6, LCD_D7);  // LCD handling system 
 
+
+
 #else
+
+#include <LiquidCrystal.h>
+class LCD_ : public LiquidCrystal {
+public: // QCXLiquidCrystal extends LiquidCrystal library for pull-up driven LCD_RS, as done on QCX. LCD_RS needs to be set to LOW in advance of calling any operation.
+  //LCD_(uint8_t rs = LCD_RS, uint8_t en = LCD_EN, uint8_t d4 = LCD_D4, uint8_t d5, = LCD_D5 uint8_t d6 = LCD_D6, uint8_t d7 = LCD_D7) : LiquidCrystal(rs, en, d4, d5, d6, d7){ };
+  LCD_() : LiquidCrystal(LCD_RS, LCD_EN, LCD_D4, LCD_D5, LCD_D6, LCD_D7){ };
+  virtual size_t write(uint8_t value){ // overwrites LiquidCrystal::write() and re-implements LCD data writes
+    pinMode(LCD_RS, INPUT);  // pull-up LCD_RS
+    write4bits(value >> 4);
+    write4bits(value);
+    pinMode(LCD_RS, OUTPUT); // pull-down LCD_RS
+    return 1;
+  };
+  void write4bits(uint8_t value){
+    digitalWrite(LCD_D4, (value >> 0) & 0x01);
+    digitalWrite(LCD_D5, (value >> 1) & 0x01);
+    digitalWrite(LCD_D6, (value >> 2) & 0x01);
+    digitalWrite(LCD_D7, (value >> 3) & 0x01);
+    digitalWrite(LCD_EN, LOW);  // pulseEnable
+    delayMicroseconds(1);
+    digitalWrite(LCD_EN, HIGH);
+    delayMicroseconds(1);    // enable pulse must be >450ns
+    digitalWrite(LCD_EN, LOW);
+    delayMicroseconds(100);   // commands need > 37us to settle
+  };
+};
+
 
 template<class parent>class Display : public parent {  // This class spoofs display contents and cursor state
 public:
@@ -404,6 +451,7 @@ public:
 };
 
 Display<LCD> lcd;     // highly-optimized LCD driver, OK for QCX supplied displays
+
 #endif //PIXIE
 
 volatile int8_t encoder_val = 0;
@@ -435,8 +483,10 @@ void encoder_setup()
   PCMSK2 |= (1 << PCINT19) | (1 << PCINT18); // interrupt-enable for ROT_A, ROT_B pin changes; 
   PCICR |= (1 << PCIE2); 
 #else  
+
   PCMSK2 |= (1 << PCINT22) | (1 << PCINT23); // interrupt-enable for ROT_A, ROT_B pin changes; see https://github.com/EnviroDIY/Arduino-SDI-12/wiki/2b.-Overview-of-Interrupts
   PCICR |= (1 << PCIE2); 
+
 #endif //PIXIE
   
   last_state = (_digitalRead(ROT_B) << 1) | _digitalRead(ROT_A);
@@ -470,8 +520,8 @@ public:
     suspend();
   }
   ~I2C(){
-    I2C_PORT &= ~( I2C_SDA | I2C_SCL );
-    I2C_DDR &= ~( I2C_SDA | I2C_SCL );
+    I2C_PORT &= ~( I2C_SDA | I2C_SCL );  //LOW
+    I2C_DDR &= ~( I2C_SDA | I2C_SCL );   //OUTPUT
   }  
   inline void start(){
     resume();  //prepare for I2C
@@ -481,7 +531,7 @@ public:
   inline void stop(){
     I2C_SCL_HI();
     I2C_SDA_HI();
-    I2C_DDR &= ~(I2C_SDA | I2C_SCL); // prepare for a start: pull-up both SDA, SCL
+    I2C_DDR &= ~(I2C_SDA | I2C_SCL); // prepare for a start: pull-up both SDA, SCL  
     suspend();
   }
   #define SendBit(data, mask) \
@@ -523,7 +573,7 @@ public:
     I2C_SCL_HI();
     uint16_t i = 60000;
     for(;(!I2C_SCL_GET()) && i; i--);  // wait util slave release SCL to HIGH (meaning data valid), or timeout at 3ms
-    //if(!i){ lcd.setCursor(0, 1); lcd.print(F("E07 I2C timeout")); }
+    if(!i){ lcd.setCursor(0, 1); lcd.print(F("E07 I2C timeout")); }  //BLACKOUT
     uint8_t data = I2C_SDA_GET();
     I2C_SCL_LO();
     return (data) ? mask : 0;
@@ -550,13 +600,21 @@ public:
     return data;
   }
   inline void resume(){
+    
+//#ifdef PIXIE //BLACKOUT
+//#define LCD_RS_PORTIO 1
+//#endif //PIXIE BLACKOUT
+  
   #ifdef LCD_RS_PORTIO
     I2C_PORT &= ~I2C_SDA; // pin sharing SDA/LCD_RS mitigation
   #endif
   }
+  
   inline void suspend(){
-    
+
+//#ifndef PIXIE //BLACKOUT    
     I2C_SDA_LO();         // pin sharing SDA/LCD_RS: pull-down LCD_RS; QCXLiquidCrystal require this for any operation
+//#endif //PIXIE    
     
   }
 
@@ -778,7 +836,6 @@ public:
 
 };
 static SI5351 si5351;
-
 
 
 enum dsp_cap_t { ANALOG, DSP, SDR };
@@ -2298,8 +2355,14 @@ uint16_t analogSampleMic()
 }
 
 volatile bool change = true;
+#ifdef PIXIE //BLACKOUT
+volatile int32_t freq = 7040000;
+static int32_t vfo[] = { 7040000, 14074000 };
+#else
 volatile int32_t freq = 7074000;
 static int32_t vfo[] = { 7074000, 14074000 };
+#endif //PIXIE
+
 static uint8_t vfomode[] = { USB, USB };
 enum vfo_t { VFOA=0, VFOB=1, SPLIT=2 };
 volatile uint8_t vfosel = VFOA;
@@ -2981,8 +3044,14 @@ void initPins(){
   pinMode(DIT, INPUT_PULLUP);
   
 #ifdef PIXIE  
+
   pinMode(LCD_BL,OUTPUT);
   digitalWrite(LCD_BL,HIGH); 
+
+  //pinMode(SDA,OUTPUT);  //BLACKOUT ISSUE
+  //pinMode(SCL,OUTPUT);  //BLACKOUT ISSUE
+  //digitalWrite(SDA,LOW); //BLACKOUT
+  //digitalWrite(SCL,LOW); //BLACKOUT
   
 
 #else  
@@ -3001,14 +3070,17 @@ void initPins(){
   digitalWrite(NTX, HIGH);
   pinMode(NTX, OUTPUT);
 #endif //NTX
+
 #ifdef PTX
   digitalWrite(PTX, LOW);
   pinMode(PTX, OUTPUT);
 #endif //PTX
+
 #ifdef SWR_METER
   pinMode(vin_FWD, INPUT);
   pinMode(vin_REF, INPUT);
 #endif
+
 #ifdef OLED  // assign unused LCD pins
   pinMode(PD4, OUTPUT);
   pinMode(PD5, OUTPUT);
@@ -3468,7 +3540,8 @@ void setup()
   initPins();
 
   delay(100);           // at least 40ms after power rises above 2.7V before sending commands
-  lcd.begin(16, 2);  // Init LCD
+  lcd.begin(16, 2);  // BLACKOUT Init LCD
+  
 #ifndef OLED
   for(i = 0; i != N_FONTS; i++){  // Init fonts
     pgm_cache_item(fonts[i], 8);

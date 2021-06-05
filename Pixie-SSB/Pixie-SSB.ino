@@ -17,7 +17,7 @@
 #define PIXIE 1
 
 #ifdef PIXIE
-#define VERSION   "1.1a"
+#define VERSION   "1.1b"
 #else
 #define VERSION   "1.01t"
 #endif //PIXIE
@@ -30,12 +30,25 @@
 /*
  * Configuration options enabled on the Pixie implementation
  */
- 
+#ifdef PIXIE
+#define PIXIE_DEBUG
+
+#ifdef PIXIE_DEBUG
+char hi[80];
+#endif //PIXIE_DEBUG
+#endif //PIXIE
+
 #define VOX_ENABLE       1   // Voice-On-Xmit which is switching the transceiver into transmit as soon audio is detected (above noise gate level)
 #define SI5351_ADDR   0x60   // SI5351A I2C address: 0x60 for SI5351A-B-GT, Si5351A-B04771-GT, MS5351M; 0x62 for SI5351A-B-04486-GT; 0x6F for SI5351A-B02075-GT; see here for other variants: https://www.silabs.com/TimingUtility/timing-download-document.aspx?OPN=Si5351A-B02075-GT&OPNRevision=0&FileType=PublicAddendum
 #define F_XTAL    25001180   // Ajuste fino de la frecuencia del cristal del SI5351 
 #define F_MCU     16000000   // 16MHz ATMEGA328P crystal  (enable for unmodified Arduino Uno/Nano boards with 16MHz crystal). You may change this value to any other crystal frequency (up to 28MHz may work)
 
+#define PUSH_ENCODER_MIN     0
+#define PUSH_ENCODER_MAX   400
+#define PUSH_LEFT_MIN      800
+#define PUSH_LEFT_MAX      900
+#define PUSH_RIGHT_MIN     900
+#define PUSH_RIGHT_MAX    1023
 /*
  * Configuration options disabled on the Pixie implementation
  */
@@ -110,7 +123,7 @@
 #define KEY_OUT 12 //10        //PB2    (pin 16) D12
 #define DIT     13             //PB5    (pin 19) D13
 #define DVM     16             //PC2/A2 (pin 25) A2
-#define BUTTONS 14 //17        //PC3/A3 (pin 26) A0
+#define BUTTONS 17 //17        //PC3/A3 (pin 26) A0
 #define LCD_RS  8  //18        //PC4    (pin 27) D8
 #define SDA     18             //PC4    (pin 27) SDA
 #define SCL     19             //PC5    (pin 28) SCL
@@ -2355,13 +2368,8 @@ uint16_t analogSampleMic()
 }
 
 volatile bool change = true;
-#ifdef PIXIE //BLACKOUT
-volatile int32_t freq = 7040000;
-static int32_t vfo[] = { 7040000, 14074000 };
-#else
 volatile int32_t freq = 7074000;
 static int32_t vfo[] = { 7074000, 14074000 };
-#endif //PIXIE
 
 static uint8_t vfomode[] = { USB, USB };
 enum vfo_t { VFOA=0, VFOB=1, SPLIT=2 };
@@ -2743,6 +2751,7 @@ void show_banner(){
 #else
   lcd.print(F("Pixie"));
   lcd.print(F("-")); lcd.print(cap_label[0]);
+  lcd.print(F("\x01 ")); lcd_blanks();
 
 #endif //PIXIE  
 #endif
@@ -3595,6 +3604,7 @@ void setup()
   start_rx();
 
 #if defined CAT
+
 #ifdef CAT_STREAMING
   #define BAUD   115200           //Baudrate used for serial communications
 #else
@@ -3602,7 +3612,14 @@ void setup()
 #endif
   Serial.begin(16000000ULL * BAUD / F_MCU); // corrected for F_CPU=20M
   Command_IF();
+#else
 
+#ifdef PIXIE
+#ifdef PIXIE_DEBUG
+  Serial.begin(9600);
+#endif
+#endif //PIXIE
+  
 #endif //CAT 
 
 #ifdef KEYER
@@ -3625,6 +3642,20 @@ void setup()
   }
 }
 
+bool _readButton() {
+  uint16_t v=analogSafeRead(BUTTONS);
+  if (v<PUSH_ENCODER_MAX) {
+     return true;
+  } else {
+    if (v>=PUSH_ENCODER_MAX && v<PUSH_LEFT_MIN) {
+      return false;
+    } else {
+      return true;
+    }
+  }
+  return false;
+}
+  
 static int32_t _step = 0;
 
 void loop()
@@ -3789,32 +3820,56 @@ void loop()
   }
 #endif //KEYER
 
+#ifdef PIXIE
+#define READBUTTON _readButton()
+#else
+#define READBUTTON _digitalRead(BUTTONS)
+#endif 
+
 #ifdef SEMI_QSK
   if((semi_qsk_timeout) && (millis() > semi_qsk_timeout)){ switch_rxtx(0); }  // delayed QSK RX
 #endif
   enum event_t { BL=0x10, BR=0x20, BE=0x30, SC=0x01, DC=0x02, PL=0x04, PLC=0x05, PT=0x0C }; // button-left, button-right and button-encoder; single-click, double-click, push-long, push-and-turn
-  if(_digitalRead(BUTTONS)){   // Left-/Right-/Rotary-button (while not already pressed)
+
+  //if(_digitalRead(BUTTONS)){   // Left-/Right-/Rotary-button (while not already pressed)
+  if(READBUTTON) { //  Left-/Right-/Rotary-button (while not already pressed)
+  
     if(!((event & PL) || (event & PLC))){  // hack: if there was long-push before, then fast forward
       uint16_t v = analogSafeRead(BUTTONS);
+      
 #ifdef CAT_EXT
       if(cat_key){ v = (cat_key&0x04) ? 512 : (cat_key&0x01) ? 870 : (cat_key&0x02) ? 1024 : 0; }  // override analog value exercised by BUTTONS press
 #endif //CAT_EXT
+
       event = SC;
       int32_t t0 = millis();
-      for(; _digitalRead(BUTTONS);){ // until released or long-press
+      //for(; _digitalRead(BUTTONS);){ // until released or long-press
+      for(; READBUTTON;) { // until released or long-press
         if((millis() - t0) > 300){ event = PL; break; }
         wdt_reset();
       }
       delay(10); //debounce
-      for(; (event != PL) && ((millis() - t0) < 500);){ // until 2nd press or timeout
-        if(_digitalRead(BUTTONS)){ event = DC; break; }
+      for(; (event != PL) && ((millis() - t0) < 500);){ // until 2nd press or timeout        
+        if(READBUTTON) { event = DC; break; }
+        //if(_digitalRead(BUTTONS)){ event = DC; break; }
         wdt_reset();
       }
-      for(; _digitalRead(BUTTONS);){ // until released, or encoder is turned while longpress
+      //for(; _digitalRead(BUTTONS);){ // until released, or encoder is turned while longpress
+      for(; READBUTTON;){ // until released, or encoder is turned while longpress
         if(encoder_val && event == PL){ event = PT; break; }
         wdt_reset();
       }  // Max. voltages at ADC3 for buttons L,R,E: 3.76V;4.55V;5V, thresholds are in center
+#ifdef PIXIE
+      event |= (v < PUSH_ENCODER_MAX ? BE : (v>PUSH_LEFT_MIN && v<=PUSH_LEFT_MAX ? BL : BR)); // determine which button pressed based on threshold levels     
+#else      
       event |= (v < (4.2 * 1024.0 / 5.0)) ? BL : (v < (4.8 * 1024.0 / 5.0)) ? BR : BE; // determine which button pressed based on threshold levels
+#endif      
+
+#ifdef PIXIE_DEBUG
+      sprintf(hi,"event=%x menu=%d menumode=%d\n",event,menu,menumode);
+      Serial.print(hi);
+#endif //PIXIE_DEBUG
+
     } else {  // hack: fast forward handling
       event = (event&0xf0) | ((encoder_val) ? PT : PLC/*PL*/);  // only alternate between push-long/turn when applicable
     }
@@ -4072,6 +4127,13 @@ void loop()
       }
     }
   }
+
+#ifdef PIXIE_DEBUG
+  if (encoder_val!=0x00) {
+      sprintf(hi,"event=%x menu=%d menumode=%d encoder=%d\n",event,menu,menumode,encoder_val);
+      Serial.print(hi);
+  }    
+#endif //PIXIE_DEBUG
 
   if(menumode == 0){
     if(encoder_val){  // process encoder tuning steps
